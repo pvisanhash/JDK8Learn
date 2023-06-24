@@ -107,6 +107,7 @@ import jdk.internal.vm.annotation.ReservedStackAccess;
 public class ReentrantLock implements Lock, java.io.Serializable {
     private static final long serialVersionUID = 7373984872572414699L;
     /** Synchronizer providing all implementation mechanics */
+    // 其实就是AQS的子类，它也有两个子类：公平同步器，非公平同步器
     private final Sync sync;
 
     /**
@@ -129,21 +130,32 @@ public class ReentrantLock implements Lock, java.io.Serializable {
          */
         @ReservedStackAccess
         final boolean nonfairTryAcquire(int acquires) {
+            // 当前线程
             final Thread current = Thread.currentThread();
+            // 获取当前AQS的状态，由于state被volatile修饰，所以有volatile的内存语义(cpu的三级缓存失效)
             int c = getState();
+            // 如果状态是0，代表没有线程持有锁
             if (c == 0) {
+                // 那就CAS的方式改state的值，获取锁
                 if (compareAndSetState(0, acquires)) {
+                    // 如果成功，就将当前线程设置为互斥模式下锁的持有者线程
                     setExclusiveOwnerThread(current);
+                    // 尝试获取成功，返回true
                     return true;
                 }
             }
+            // 走到这，代表state!=0 或者 state==0但cas获取锁失败
+            // 如果互斥模式下的锁的持有者线程就是当前线程，则为锁重入，state+1
             else if (current == getExclusiveOwnerThread()) {
                 int nextc = c + acquires;
+                // 这里有一种极端的可能性，持有线程的数量超过了int的最大值，溢出
                 if (nextc < 0) // overflow
                     throw new Error("Maximum lock count exceeded");
+                // 走到这，代表未超过int的最大值，则重入次数+1
                 setState(nextc);
                 return true;
             }
+            // 其他情况，则获取锁失败
             return false;
         }
 
@@ -204,16 +216,21 @@ public class ReentrantLock implements Lock, java.io.Serializable {
         /**
          * Performs lock.  Try immediate barge, backing up to normal
          * acquire on failure.
+         * 尝试去竟争锁，如果失败就恢复正常的排队获取
          */
-        @ReservedStackAccess
+        @ReservedStackAccess // 这个注解是保留区栈访问，简单了解即可
         final void lock() {
+            // 获取锁 等价于 将AQS中的state变量置为1
             if (compareAndSetState(0, 1))
+                // 如果获取锁成功，将当前线程设置为当前锁的持有线程
                 setExclusiveOwnerThread(Thread.currentThread());
             else
+                // 如果获取锁失败，执行acquire()获取方法,注意这里的参数为1
                 acquire(1);
         }
 
         protected final boolean tryAcquire(int acquires) {
+            // 非公平锁的 tryAcquires()
             return nonfairTryAcquire(acquires);
         }
     }
@@ -225,6 +242,8 @@ public class ReentrantLock implements Lock, java.io.Serializable {
         private static final long serialVersionUID = -3000897897090466540L;
 
         final void lock() {
+            // 公平锁这里与非公平锁的一个区别是：非公平锁会尝试CAS获取锁，但公平锁不会尝试获取锁
+            // 只有acquire()方法内有获取锁的动作
             acquire(1);
         }
 
@@ -234,8 +253,11 @@ public class ReentrantLock implements Lock, java.io.Serializable {
          */
         @ReservedStackAccess
         protected final boolean tryAcquire(int acquires) {
+            // 当前线程
             final Thread current = Thread.currentThread();
+            // 获取AQS的状态，由于State被volatile修饰，所以有volatile的内存语义(CPU三级缓存失效)
             int c = getState();
+            // 如果当前状态为0
             if (c == 0) {
                 if (!hasQueuedPredecessors() &&
                     compareAndSetState(0, acquires)) {
@@ -285,6 +307,8 @@ public class ReentrantLock implements Lock, java.io.Serializable {
      * current thread becomes disabled for thread scheduling
      * purposes and lies dormant until the lock has been acquired,
      * at which time the lock hold count is set to one.
+     *
+     * lock()方法是Lock接口定义的，ReentrantLock实现其方就去，本质是调用Sync类的lock()方法
      */
     public void lock() {
         sync.lock();

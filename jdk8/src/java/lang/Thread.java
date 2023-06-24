@@ -917,12 +917,14 @@ class Thread implements Runnable {
      * @spec JSR-51
      */
     public void interrupt() {
+        // 安全检查
         if (this != Thread.currentThread())
             checkAccess();
 
         synchronized (blockerLock) {
             Interruptible b = blocker;
             if (b != null) {
+                // native方法设置打断标识志
                 interrupt0();           // Just to set the interrupt flag
                 b.interrupt(this);
                 return;
