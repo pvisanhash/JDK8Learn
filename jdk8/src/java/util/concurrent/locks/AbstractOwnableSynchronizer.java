@@ -84,6 +84,7 @@ public abstract class AbstractOwnableSynchronizer
      * @return the owner thread
      */
     protected final Thread getExclusiveOwnerThread() {
+        // 获取当前互斥模式下的持有者线程
         return exclusiveOwnerThread;
     }
 }

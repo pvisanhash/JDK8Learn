@@ -642,6 +642,7 @@ public abstract class AbstractQueuedSynchronizer
         }
         // 走到这，代表队列中没有节点 或 有值但设tail失败
         // 对于第一种情况加伪节点，对于第二种情况再次尝试设tail
+        // 排队方法
         enq(node);
         // 返回新增的节点
         return node;
@@ -1002,29 +1003,42 @@ public abstract class AbstractQueuedSynchronizer
             throws InterruptedException {
         if (nanosTimeout <= 0L)
             return false;
+        // 截止期限
         final long deadline = System.nanoTime() + nanosTimeout;
+        // 将当前节点加入到排队队列中
         final Node node = addWaiter(Node.EXCLUSIVE);
         boolean failed = true;
         try {
+            // 注意这个死循环
             for (;;) {
+                // 前节点
                 final Node p = node.predecessor();
+                // 如果前节点是头节点 && 尝试获取锁成功
                 if (p == head && tryAcquire(arg)) {
+                    // 将当前节点设置为头节点(伪)
                     setHead(node);
                     p.next = null; // help GC
                     failed = false;
                     return true;
                 }
+                // 走到这，代表前节点不是头 || 前节点是头但尝试获取锁失败
+                // 看下还剩多少秒
                 nanosTimeout = deadline - System.nanoTime();
                 if (nanosTimeout <= 0L)
+                    // 如果没有时间操作了，直接false获取锁失败
                     return false;
+                // 走到这，失败获取锁后看下是否需要挂起线程
                 if (shouldParkAfterFailedAcquire(p, node) &&
                     nanosTimeout > spinForTimeoutThreshold)
+                    // 有足够的时间来操作，就挂起当前线程一定时间
                     LockSupport.parkNanos(this, nanosTimeout);
                 if (Thread.interrupted())
+                    // 判断打断状态
                     throw new InterruptedException();
             }
         } finally {
             if (failed)
+                // 失败获取，就取消获取
                 cancelAcquire(node);
         }
     }
@@ -1286,6 +1300,8 @@ public abstract class AbstractQueuedSynchronizer
     public final void acquire(int arg) {
         // !尝试获取锁成功 && 获取新队列
         // tryAcquire()公平锁与非公平锁有区别：
+        // 公平锁会查看当前是否有排队的线程，没有排队的线程才会尝试获取锁
+        // 非公平锁不管是否有排队线程都会尝试获取锁
         if (!tryAcquire(arg) &&
             acquireQueued(addWaiter(Node.EXCLUSIVE), arg))
             // 走到这，代表没有获取锁成功 && 获取新队列被打断了
@@ -1610,6 +1626,7 @@ public abstract class AbstractQueuedSynchronizer
         Node t = tail; // Read fields in reverse initialization order
         Node h = head;
         Node s;
+        // 是否有排队的前节点,==null相当于保证了s不可能为null
         return h != t &&
             ((s = h.next) == null || s.thread != Thread.currentThread());
     }

@@ -5,7 +5,7 @@ import java.util.concurrent.locks.ReentrantLock;
 /**
  * 试验ReentrantLock加锁流程
  */
-public class ReentrantLockTest1 {
+public class ReentrantLockTestLock {
 
 
     /**

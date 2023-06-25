@@ -106,8 +106,12 @@ import jdk.internal.vm.annotation.ReservedStackAccess;
  */
 public class ReentrantLock implements Lock, java.io.Serializable {
     private static final long serialVersionUID = 7373984872572414699L;
-    /** Synchronizer providing all implementation mechanics */
-    // 其实就是AQS的子类，它也有两个子类：公平同步器，非公平同步器
+    /**
+     * Synchronizer providing all implementation mechanics
+     *
+     * 其实就是AQS的子类，它也有两个子类：公平同步器，非公平同步器
+     *
+     * */
     private final Sync sync;
 
     /**
@@ -255,23 +259,29 @@ public class ReentrantLock implements Lock, java.io.Serializable {
         protected final boolean tryAcquire(int acquires) {
             // 当前线程
             final Thread current = Thread.currentThread();
-            // 获取AQS的状态，由于State被volatile修饰，所以有volatile的内存语义(CPU三级缓存失效)
+            // 获取AQS的状态，由于State被volatile修饰，所以有volatile的内存语义(CPU三级缓存失效)，获取到的一定是最新的state值
             int c = getState();
-            // 如果当前状态为0
+            // 如果当前状态为0，代表没有线程持有锁
             if (c == 0) {
+                // 没有前节点 && 通过CAS的方式获取锁成功
                 if (!hasQueuedPredecessors() &&
                     compareAndSetState(0, acquires)) {
+                    // 设置互斥模式下的锁持有者线程
                     setExclusiveOwnerThread(current);
                     return true;
                 }
             }
+            // 走到这，代表 状态!=0 || ==0但(有前节点 || CAS获取锁失败）
             else if (current == getExclusiveOwnerThread()) {
+                // 走到这，代表是锁重入场景
                 int nextc = c + acquires;
+                // int 溢出场景
                 if (nextc < 0)
                     throw new Error("Maximum lock count exceeded");
                 setState(nextc);
                 return true;
             }
+            // 其他情况，获取锁失败
             return false;
         }
     }
