@@ -177,7 +177,7 @@ public class ReentrantLock implements Lock, java.io.Serializable {
                 // 将互斥锁的持有者线程置null
                 setExclusiveOwnerThread(null);
             }
-            // 走到这，代表 c!=0
+            // 走到这，代表 c!=0 || c==0,将c设置给state,并返回是是否释放成功的标志
             setState(c);
             return free;
         }
