@@ -544,6 +544,8 @@ public abstract class AbstractQueuedSynchronizer
      * Returns the current value of synchronization state.
      * This operation has memory semantics of a {@code volatile} read.
      * @return current state value
+     *
+     * 获取当前AQS的state值,有volatile的内存语义(CPU的三级缓存失效)
      */
     protected final int getState() {
         return state;
@@ -623,7 +625,7 @@ public abstract class AbstractQueuedSynchronizer
      * @return the new node
      */
     private Node addWaiter(Node mode) {
-        //根据互斥模式创建出队列的一个节点
+        // 根据互斥模式创建出队列的一个节点
         Node node = new Node(Thread.currentThread(), mode);
         // Try the fast path of enq; backup to full enq on failure
         Node pred = tail; // 前者
@@ -676,7 +678,8 @@ public abstract class AbstractQueuedSynchronizer
         int ws = node.waitStatus;
         // 如果当前节点的状态<0,虽然是-1,-2,-3,但是这里应该就是-1信号
         if (ws < 0)
-            // 将当前状态改为0
+            // 将当前状态改为0，比如头节点的状态为-1，就需要将头节点的后继节点唤醒
+            // 此时将头节点的状态改为0
             compareAndSetWaitStatus(node, ws, 0);
 
         /*
@@ -796,7 +799,8 @@ public abstract class AbstractQueuedSynchronizer
             // node.prev = pred;
             node.prev = pred = pred.prev;
 
-        // 跳出循环时，pred.waitStatus <=0;
+        // 跳出循环时，pred.waitStatus<=0也就是pred是非取消的节点
+
         // predNext is the apparent node to unsplice. CASes below will
         // fail if not, in which case, we lost race vs another cancel
         // or signal, so no further action is necessary.
@@ -828,7 +832,7 @@ public abstract class AbstractQueuedSynchronizer
                 pred.thread != null) {
                 // 获取当前节点的下一个节点
                 Node next = node.next;
-                // 只有当下一个节点不为null且waitStatus !> 0才设置next
+                // 只有当下一个节点不为null且waitStatus != 1才设置next
                 if (next != null && next.waitStatus <= 0)
                     compareAndSetNext(pred, predNext, next);
             } else {
@@ -971,23 +975,32 @@ public abstract class AbstractQueuedSynchronizer
      */
     private void doAcquireInterruptibly(int arg)
         throws InterruptedException {
+        // 以互斥模式创建出一个节点 并 放到队列中
         final Node node = addWaiter(Node.EXCLUSIVE);
         boolean failed = true;
         try {
             for (;;) {
+                // 前节点
                 final Node p = node.predecessor();
+                // 如果前节点就是头 && 尝试获取锁
                 if (p == head && tryAcquire(arg)) {
+                    // 走到这，代表获取锁成功，则node就是新头(伪)
                     setHead(node);
                     p.next = null; // help GC
                     failed = false;
                     return;
                 }
+                // 走到这，代表前节点不是头 || 前节点是头尝试获取锁失败
+                // 失败获取时判断是否需要挂起
                 if (shouldParkAfterFailedAcquire(p, node) &&
+                        // 挂起并检测当前线程是否是打断状态
                     parkAndCheckInterrupt())
+                    // 走到这，代表是需要挂起 且 是打断状态
                     throw new InterruptedException();
             }
         } finally {
             if (failed)
+                // 走到这，代表获取锁失败
                 cancelAcquire(node);
         }
     }
@@ -1324,9 +1337,13 @@ public abstract class AbstractQueuedSynchronizer
      */
     public final void acquireInterruptibly(int arg)
             throws InterruptedException {
+        // 查看当前是否为打断状态
         if (Thread.interrupted())
             throw new InterruptedException();
+        // 尝试获取锁，公平锁与非公平锁有不同的实现
         if (!tryAcquire(arg))
+            // 走到这，代表尝试获取锁失败
+            // 以打断的方式进行获取
             doAcquireInterruptibly(arg);
     }
 
@@ -1367,12 +1384,17 @@ public abstract class AbstractQueuedSynchronizer
      */
     @ReservedStackAccess
     public final boolean release(int arg) {
+        // 尝试释放锁，其实就是看AQS中的state是否为0
         if (tryRelease(arg)) {
+            // 走到这，代表释放锁成功
             Node h = head;
+            // 头节点不为null && 状态不为0(为0代表没有后继有效节点)
             if (h != null && h.waitStatus != 0)
+                // 唤醒后继节点
                 unparkSuccessor(h);
             return true;
         }
+        // 尝试释放锁失败
         return false;
     }
 
