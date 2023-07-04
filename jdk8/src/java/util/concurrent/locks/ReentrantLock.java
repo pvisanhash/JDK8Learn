@@ -140,15 +140,18 @@ public class ReentrantLock implements Lock, java.io.Serializable {
             int c = getState();
             // 如果状态是0，代表没有线程持有锁
             if (c == 0) {
+                // 走到这，可能存在并发的场景
                 // 那就CAS的方式改state的值，获取锁
                 if (compareAndSetState(0, acquires)) {
+                    // 进入这里，肯定是线程安全的
                     // 如果成功，就将当前线程设置为互斥模式下锁的持有者线程
                     setExclusiveOwnerThread(current);
                     // 尝试获取成功，返回true
                     return true;
                 }
             }
-            // 走到这，代表state!=0 或者 state==0但cas获取锁失败
+            // 走到这，可能存在多个线程并发的场景，多个线程读操作无线程安全问题，只有当写操作时才有线程安全问题
+            // 走到这，代表state!=0 或者 state==0但cas获取锁失败（也是state!=0）,其实就是锁被其他线程持有了
             // 如果互斥模式下的锁的持有者线程就是当前线程，则为锁重入，state+1
             else if (current == getExclusiveOwnerThread()) {
                 int nextc = c + acquires;
@@ -156,6 +159,7 @@ public class ReentrantLock implements Lock, java.io.Serializable {
                 if (nextc < 0) // overflow
                     throw new Error("Maximum lock count exceeded");
                 // 走到这，代表未超过int的最大值，则重入次数+1
+                // 走到这，一定是线程安全的，因为只有持有锁的线程才能进入这里面
                 setState(nextc);
                 return true;
             }
@@ -225,16 +229,19 @@ public class ReentrantLock implements Lock, java.io.Serializable {
         /**
          * Performs lock.  Try immediate barge, backing up to normal
          * acquire on failure.
+         *
          * 尝试去竟争锁，如果失败就恢复正常的排队获取
          */
         @ReservedStackAccess // 这个注解是保留区栈访问，简单了解即可
         final void lock() {
             // 获取锁 等价于 将AQS中的state变量置为1
             if (compareAndSetState(0, 1))
-                // 如果获取锁成功，将当前线程设置为当前锁的持有线程
+                // 如果获取锁成功，将当前线程设置为当前互斥锁的持有线程
+                // 因为能走进来，是通过CAS返回true的，所以没有并发场景
                 setExclusiveOwnerThread(Thread.currentThread());
             else
                 // 如果获取锁失败，执行acquire()获取方法,注意这里的参数为1
+                // 进入这个方法可能有多个失败获取锁的线程并发场景
                 acquire(1);
         }
 
@@ -323,7 +330,7 @@ public class ReentrantLock implements Lock, java.io.Serializable {
      * purposes and lies dormant until the lock has been acquired,
      * at which time the lock hold count is set to one.
      *
-     * lock()方法是Lock接口定义的，ReentrantLock实现其方就去，本质是调用Sync类的lock()方法
+     * lock()方法是Lock接口定义的，ReentrantLock实现其方法，本质是调用Sync类的lock()方法
      */
     public void lock() {
         sync.lock();
@@ -406,6 +413,7 @@ public class ReentrantLock implements Lock, java.io.Serializable {
      *         thread; and {@code false} otherwise
      */
     public boolean tryLock() {
+        // tryLock()方法都是用的非公平的方法尝试获取锁
         return sync.nonfairTryAcquire(1);
     }
 

@@ -381,7 +381,12 @@ public abstract class AbstractQueuedSynchronizer
     static final class Node {
         /** Marker to indicate a node is waiting in shared mode */
         static final Node SHARED = new Node();
-        /** Marker to indicate a node is waiting in exclusive mode */
+
+        /**
+         * Marker to indicate a node is waiting in exclusive mode
+         *
+         * 互斥模式的标志器
+         * */
         static final Node EXCLUSIVE = null;
 
         /** waitStatus value to indicate thread has cancelled */
@@ -493,6 +498,7 @@ public abstract class AbstractQueuedSynchronizer
          * @return the predecessor of this node
          */
         final Node predecessor() throws NullPointerException {
+            // 获取前节点，如果前节点为null，抛异常
             Node p = prev;
             if (p == null)
                 throw new NullPointerException();
@@ -505,8 +511,10 @@ public abstract class AbstractQueuedSynchronizer
 
         Node(Thread thread, Node mode) {     // Used by addWaiter
             // nextWaiter指示是互斥锁还是共享锁
+            // nextWaiter后面主要用于等待队列，不是AQS的锁队列
+            // 互斥模式下其实就是null
             this.nextWaiter = mode;
-            // Node保存了面要排队的线程
+            // Node保存了要排队的线程
             this.thread = thread;
         }
 
@@ -594,9 +602,10 @@ public abstract class AbstractQueuedSynchronizer
      * @return node's predecessor
      */
     private Node enq(final Node node) {
+        // 无论怎么样，我一定要将node插入到AQS锁队列中
         // while(true)
         for (;;) {
-            // 获取tail
+            // 重新获取tail
             Node t = tail;
             if (t == null) { // Must initialize
                 // 如果tail为null，代表队列中一个节点就没有，搞个伪节点
@@ -605,10 +614,11 @@ public abstract class AbstractQueuedSynchronizer
                     tail = head;
             } else {
                 // 走到这，代表尾有节点
-                // node是排队的节点
+                // node是排队的节点，node重新指向尾
                 node.prev = t;
                 // CAS的方式设置尾节点，expect为尾节点，update为新增的节点
                 if (compareAndSetTail(t, node)) {
+                    // 走到这，tail指向node
                     // 设置原尾节点的next
                     t.next = node;
                     // 返回原尾部节点
@@ -625,16 +635,17 @@ public abstract class AbstractQueuedSynchronizer
      * @return the new node
      */
     private Node addWaiter(Node mode) {
-        // 根据互斥模式创建出队列的一个节点
+        // 根据互斥模式创建出锁队列的一个节点
         Node node = new Node(Thread.currentThread(), mode);
         // Try the fast path of enq; backup to full enq on failure
         Node pred = tail; // 前者
-        // 如果队列中有节点了
+        // 如果队列中有节点了（最常见的的场景，所以单拎出来）
         if (pred != null) {
             // 新节点prev设值
             node.prev = pred;
             // CAS方式设置尾部，期待是pred，需要设的值为node,即将node设置为新尾部
             if (compareAndSetTail(pred, node)) {
+                // 通过CAS走到这，一定是线程安全的
                 // 走到这，代表tail已经指向node
                 // 设置pred的next值
                 pred.next = node;
@@ -644,8 +655,9 @@ public abstract class AbstractQueuedSynchronizer
         }
         // 走到这，代表队列中没有节点 或 有值但设tail失败
         // 对于第一种情况加伪节点，对于第二种情况再次尝试设tail
-        // 排队方法
+        // 排队方法，以循环的方式将node插入到AQS锁队列中
         enq(node);
+        // 走到这，AQS队列中一定有新增的节点
         // 返回新增的节点
         return node;
     }
@@ -699,6 +711,7 @@ public abstract class AbstractQueuedSynchronizer
                 if (t.waitStatus <= 0)
                     // 状态<0(-1,-2,-3)才被认为是有效的后继节点
                     s = t;
+                // 退出循环时，s是一定最靠近node节点的有效后继节点
         }
         if (s != null)
             // 如果后继节点不为null，则将后继节点的线程唤醒
@@ -788,7 +801,9 @@ public abstract class AbstractQueuedSynchronizer
         // Ignore if node doesn't exist
         if (node == null)
             return;
-        // node 已是队列的一员
+        // 走到这，node已是队列的一员
+
+        // 因为要取消获取锁，node的thread置为null
         node.thread = null;
 
         // Skip cancelled predecessors
@@ -801,7 +816,7 @@ public abstract class AbstractQueuedSynchronizer
 
         // 跳出循环时，pred.waitStatus<=0也就是pred是非取消的节点
 
-        // predNext is the apparent node to unsplice. CASes below will
+        // predNext is the apparent node to unsplice（取消拼接）. CASes below will
         // fail if not, in which case, we lost race vs another cancel
         // or signal, so no further action is necessary.
         // 有效pred前节点的下一个节点
@@ -818,6 +833,7 @@ public abstract class AbstractQueuedSynchronizer
         // node是期待值,pred是设置值
         if (node == tail && compareAndSetTail(node, pred)) {
             // 这时候有效的前节点的next设为null
+            // 注意这里是将next设为null
             compareAndSetNext(pred, predNext, null);
         } else {
             // If successor needs signal, try to set pred's next-link
@@ -837,7 +853,8 @@ public abstract class AbstractQueuedSynchronizer
                     compareAndSetNext(pred, predNext, next);
             } else {
                 // 走到这，代表 前节点为头
-                // 直接唤醒当前节点的后继节点
+                // 直接唤醒 当前节点的后继节点
+                // 注意不是当前节点被唤醒，是当前节点的后继节点被唤醒
                 unparkSuccessor(node);
             }
             // node的next指向自己，用于GC回收
@@ -931,6 +948,7 @@ public abstract class AbstractQueuedSynchronizer
      */
     @ReservedStackAccess
     final boolean acquireQueued(final Node node, int arg) {
+        // 在队列中获取锁（不成功，就挂起线程）
         // 是否失败，默认true
         boolean failed = true;
         try {
@@ -939,13 +957,13 @@ public abstract class AbstractQueuedSynchronizer
             // while(true)
             for (;;) {
                 // 进入这个方法，node已是队列的中的一员了
-                // 获取node的前者，如果前者为空会抛空指针异常
+                // 获取node的前者，如果前者为空会抛空指针异常（正常情况下，一旦有节点进入队列中，最少也有个伪节点存在）
                 final Node p = node.predecessor();
                 // 走下面方法，代表前者一定不为空
                 // 如果前者为头节点，尝试获取锁
                 if (p == head && tryAcquire(arg)) {
                     // 走到这，代表该节点是队列中的第二个节点 并且 获取锁成功
-                    // 则头节点变成此节点
+                    // 则头节点变成此节点，将属性清空变成伪节点
                     setHead(node);
                     // 原头节点next置为null
                     p.next = null; // help GC
@@ -953,9 +971,9 @@ public abstract class AbstractQueuedSynchronizer
                     failed = false;
                     return interrupted;
                 }
-                // 走到这代表 前者不为头结节 或 是头节点但获取锁失败
-                // 失败获取后应该挂起线程
-                // 只有当前节点不为-1时，才会走到parkAndCheckInterrupt()方法
+                // 走到这代表 前者不为头结节 或 是头节点但获取锁失败（别的线程还持有着锁）
+                // 失败获取锁后应该挂起线程
+                // 只有当前节点状态为-1时，才会走到parkAndCheckInterrupt()方法
                 if (shouldParkAfterFailedAcquire(p, node) &&
                     parkAndCheckInterrupt())
                     // 确实是打断情况，才返回true
@@ -971,6 +989,9 @@ public abstract class AbstractQueuedSynchronizer
 
     /**
      * Acquires in exclusive interruptible mode.
+     *
+     * 以互斥可打断的方式获取锁
+     *
      * @param arg the acquire argument
      */
     private void doAcquireInterruptibly(int arg)
@@ -979,6 +1000,7 @@ public abstract class AbstractQueuedSynchronizer
         final Node node = addWaiter(Node.EXCLUSIVE);
         boolean failed = true;
         try {
+            // 死循环
             for (;;) {
                 // 前节点
                 final Node p = node.predecessor();
@@ -990,7 +1012,7 @@ public abstract class AbstractQueuedSynchronizer
                     failed = false;
                     return;
                 }
-                // 走到这，代表前节点不是头 || 前节点是头尝试获取锁失败
+                // 走到这，代表前节点不是头 || 前节点是头尝试获取锁失败（其他线程持有着锁）
                 // 失败获取时判断是否需要挂起
                 if (shouldParkAfterFailedAcquire(p, node) &&
                         // 挂起并检测当前线程是否是打断状态
@@ -1000,7 +1022,7 @@ public abstract class AbstractQueuedSynchronizer
             }
         } finally {
             if (failed)
-                // 走到这，代表获取锁失败
+                // 走到这，代表获取锁失败，取消获取锁
                 cancelAcquire(node);
         }
     }
@@ -1008,12 +1030,15 @@ public abstract class AbstractQueuedSynchronizer
     /**
      * Acquires in exclusive timed mode.
      *
+     * 互斥定时方式获取锁
+     *
      * @param arg the acquire argument
      * @param nanosTimeout max wait time
      * @return {@code true} if acquired
      */
     private boolean doAcquireNanos(int arg, long nanosTimeout)
             throws InterruptedException {
+        // <=0秒肯定获取不成功
         if (nanosTimeout <= 0L)
             return false;
         // 截止期限
@@ -1026,7 +1051,7 @@ public abstract class AbstractQueuedSynchronizer
             for (;;) {
                 // 前节点
                 final Node p = node.predecessor();
-                // 如果前节点是头节点 && 尝试获取锁成功
+                // 如果前节点是头节点 就去 尝试获取锁成功
                 if (p == head && tryAcquire(arg)) {
                     // 将当前节点设置为头节点(伪)
                     setHead(node);
@@ -1034,7 +1059,7 @@ public abstract class AbstractQueuedSynchronizer
                     failed = false;
                     return true;
                 }
-                // 走到这，代表前节点不是头 || 前节点是头但尝试获取锁失败
+                // 走到这，代表前节点不是头 || 前节点是头但尝试获取锁失败（有其他线程持有着锁）
                 // 看下还剩多少秒
                 nanosTimeout = deadline - System.nanoTime();
                 if (nanosTimeout <= 0L)
@@ -1311,13 +1336,13 @@ public abstract class AbstractQueuedSynchronizer
      */
     @ReservedStackAccess
     public final void acquire(int arg) {
-        // !尝试获取锁成功 && 获取新队列
+        // !尝试获取锁成功 && 队列中获取锁
         // tryAcquire()公平锁与非公平锁有区别：
         // 公平锁会查看当前是否有排队的线程，没有排队的线程才会尝试获取锁
         // 非公平锁不管是否有排队线程都会尝试获取锁
         if (!tryAcquire(arg) &&
             acquireQueued(addWaiter(Node.EXCLUSIVE), arg))
-            // 走到这，代表没有获取锁成功 && 获取新队列被打断了
+            // 走到这，代表没有获取锁成功 && 队列中获取锁时被打断了
             selfInterrupt();
     }
 
@@ -1368,6 +1393,8 @@ public abstract class AbstractQueuedSynchronizer
             throws InterruptedException {
         if (Thread.interrupted())
             throw new InterruptedException();
+        // 尝试获取锁，如果成功直接返回
+        // 不成功，在时间间隔内获取锁
         return tryAcquire(arg) ||
             doAcquireNanos(arg, nanosTimeout);
     }

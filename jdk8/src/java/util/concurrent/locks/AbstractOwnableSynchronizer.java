@@ -62,6 +62,8 @@ public abstract class AbstractOwnableSynchronizer
      * The current owner of exclusive mode synchronization.
      *
      * 互斥锁模式同步器（锁）的持有线程
+     *
+     * 注意这里的AbstractOwnableSynchronizer类 是 AQS的父类
      */
     private transient Thread exclusiveOwnerThread;
 
